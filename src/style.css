@@ -1,0 +1,204 @@
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #060a14;
+  color: rgba(255, 255, 255, 0.92);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
+#app {
+  height: 100%;
+}
+
+.root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #060a14;
+}
+
+.camera,
+.render,
+.overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.camera {
+  background: #000;
+}
+
+.render {
+  pointer-events: none;
+}
+
+.overlay {
+  pointer-events: auto;
+}
+
+.hud {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 14px;
+  backdrop-filter: blur(10px);
+  background: rgba(10, 14, 28, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.uiToggle {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 20;
+}
+
+.uiHidden .hud {
+  transform: translateY(140%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.uiHidden .gameControls {
+  display: flex;
+}
+
+.hud {
+  transform: translateY(0);
+  transition: transform 180ms ease, opacity 180ms ease;
+}
+
+.toast {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 56px;
+  z-index: 25;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 80, 80, 0.15);
+  border: 1px solid rgba(255, 80, 80, 0.35);
+  color: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  font-size: 13px;
+  line-height: 1.25;
+  display: none;
+  max-height: 34vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.gameControls {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: none;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  z-index: 15;
+  pointer-events: auto;
+}
+
+.joyWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.joyBase {
+  width: 124px;
+  height: 124px;
+  border-radius: 999px;
+  background: rgba(10, 14, 28, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(10px);
+  position: relative;
+  touch-action: none;
+}
+
+.joyKnob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 54px;
+  height: 54px;
+  margin-left: -27px;
+  margin-top: -27px;
+  border-radius: 999px;
+  background: rgba(60, 120, 255, 0.35);
+  border: 1px solid rgba(60, 120, 255, 0.55);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  transform: translate(0px, 0px);
+}
+
+.joyLabel {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.jumpBtn {
+  height: 56px;
+  min-width: 110px;
+}
+
+.hudRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.hudNote {
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.btn,
+.btnPrimary {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.92);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.btnPrimary {
+  background: rgba(60, 120, 255, 0.28);
+  border-color: rgba(60, 120, 255, 0.45);
+}
+
+.pill {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  user-select: none;
+}
+
+.pill input {
+  margin: 0;
+}
