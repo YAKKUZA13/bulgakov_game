@@ -4,28 +4,28 @@ overview: "Перестроить текущий web‑демо (Three.js + Dept
 todos:
   - id: tracking_webslam
     content: Интегрировать Web‑SLAM (AlvaAR) и связать позу с `THREE.Camera` + UX статусов/reset.
-    status: in_progress
+    status: completed
   - id: scale_calibration
     content: Добавить калибровку масштаба в метры (простая user‑flow) и применить scale во всех слоях.
-    status: pending
+    status: completed
   - id: mapping_planes
     content: "Реализовать mapping: depth keyframes → 3D points → plane detection (RANSAC) → стабильные поверхности."
-    status: pending
+    status: completed
   - id: physics_layer
     content: Ввести слой физики на `cannon-es` и синхронизацию с Three, экспортировать поверхности в коллайдеры.
-    status: pending
+    status: completed
   - id: runner_mechanic
     content: "Сделать механику runner: кубик как физический body, движение по поверхности, прыжок, простые препятствия."
-    status: pending
+    status: completed
   - id: angry_mechanic
     content: "Сделать механику «angry birds»: расстановка примитивов на поверхности + запуск снарядов + разрушение."
-    status: pending
+    status: completed
   - id: treasure_mechanic
     content: "Сделать механику поиска предметов: world‑позы, подсказки, проверка видимости/дистанции через raycast."
-    status: pending
+    status: completed
   - id: refactor_main
     content: Распилить `src/main.ts` на модули (app/ui/mr/physics/game) без потери текущего функционала и с режимами игры.
-    status: pending
+    status: completed
 ---
 
 ## Текущее состояние (что уже есть)
