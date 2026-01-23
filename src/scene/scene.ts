@@ -18,7 +18,8 @@ export function createScene(canvas: HTMLCanvasElement): SceneBundle {
 
   const scene = new THREE.Scene()
 
-  const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 50)
+  const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000)
+  camera.rotation.reorder('YXZ')
   camera.position.set(0, 1.2, 2.5)
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.65))

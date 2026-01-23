@@ -57,6 +57,8 @@ export function createTrackingController(params: ControllerParams): TrackingCont
   let pose = { position: DEFAULT_POSE.position.clone(), quaternion: DEFAULT_POSE.quaternion.clone() }
   let planePose: TrackingPlane | null = null
   let lastPoints: TrackingPoints | null = null
+  let frameW = width
+  let frameH = height
 
   let alva: AlvaInstance | null = null
   let canvas: HTMLCanvasElement | null = null
@@ -83,19 +85,26 @@ export function createTrackingController(params: ControllerParams): TrackingCont
           }
         }
       }
-      // Prefer local vendor module served from /vendor/alva_ar.js
-      const mod = (await import(/* @vite-ignore */ '/vendor/alva_ar.js')) as AlvaModule
-      if (mod?.AlvaAR?.Initialize) return mod
+      // Load from current origin to avoid localhost URL issues.
+      const modUrl = new URL('/vendor/alva_ar.js', window.location.href).toString()
+      const mod = (await import(/* @vite-ignore */ modUrl)) as AlvaModule
+      if (typeof mod?.AlvaAR?.Initialize === 'function') {
+        console.info('[alva] module loaded')
+        return mod
+      }
       return null
-    } catch {
+    } catch (err) {
+      console.warn('[alva] module load failed', err)
       return null
     }
   }
 
-  function setupCanvas() {
+  function setupCanvas(w: number, h: number) {
+    frameW = w
+    frameH = h
     canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
+    canvas.width = frameW
+    canvas.height = frameH
     ctx = canvas.getContext('2d', { willReadFrequently: true })
   }
 
@@ -146,8 +155,17 @@ export function createTrackingController(params: ControllerParams): TrackingCont
 
     const mod = await loadAlvaModule()
     if (mod?.AlvaAR) {
-      setupCanvas()
-      alva = await mod.AlvaAR.Initialize(width, height)
+      if (video.videoWidth === 0 || video.videoHeight === 0) {
+        await new Promise<void>((resolve) => {
+          const onReady = () => resolve()
+          video.addEventListener('loadedmetadata', onReady, { once: true })
+          setTimeout(onReady, 1000)
+        })
+      }
+      setupCanvas(width, height)
+      console.info(`[alva] init size ${frameW}x${frameH}, video ${video.videoWidth}x${video.videoHeight}`)
+      alva = await mod.AlvaAR.Initialize(frameW, frameH)
+      console.info('[alva] initialized')
       setStatus('tracking', 'alva')
       return
     }
@@ -169,6 +187,7 @@ export function createTrackingController(params: ControllerParams): TrackingCont
       }
       window.addEventListener('deviceorientation', onDeviceOrientation)
       window.addEventListener('devicemotion', onDeviceMotion)
+      console.info('[alva] fallback to sensors')
       setStatus('tracking', 'sensor')
       return
     }
@@ -189,8 +208,8 @@ export function createTrackingController(params: ControllerParams): TrackingCont
     void dt
     if (alva && canvas && ctx) {
       if (video.videoWidth > 0 && video.videoHeight > 0) {
-        ctx.drawImage(video, 0, 0, width, height)
-        const frame = ctx.getImageData(0, 0, width, height)
+        ctx.drawImage(video, 0, 0, frameW, frameH)
+        const frame = ctx.getImageData(0, 0, frameW, frameH)
         const res = alva.findCameraPose(frame)
         if (res && (res as any).length === 16) {
           pose = updatePoseFromMatrix(res as Float32Array)
@@ -199,7 +218,7 @@ export function createTrackingController(params: ControllerParams): TrackingCont
             planePose = updatePoseFromMatrix(plane as Float32Array)
           }
           const pts = alva.getFramePoints?.() ?? []
-          lastPoints = { points: pts, width, height }
+          lastPoints = { points: pts, width: frameW, height: frameH }
           setStatus('tracking', 'alva')
           return
         }
