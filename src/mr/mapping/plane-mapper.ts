@@ -17,6 +17,10 @@ export type PlaneMapperOptions = {
   sampleStride: number
   ransacIterations: number
   inlierThreshold: number
+  minDepth01: number
+  maxDepth01: number
+  maxSurfaceAgeMs: number
+  confidenceDecay: number
 }
 
 const DEFAULTS: PlaneMapperOptions = {
@@ -25,6 +29,10 @@ const DEFAULTS: PlaneMapperOptions = {
   sampleStride: 4,
   ransacIterations: 60,
   inlierThreshold: 0.04,
+  minDepth01: 0.02,
+  maxDepth01: 0.98,
+  maxSurfaceAgeMs: 5000,
+  confidenceDecay: 0.92,
 }
 
 export class PlaneMapper {
@@ -58,7 +66,7 @@ export class PlaneMapper {
       existing.constant = THREE.MathUtils.lerp(existing.constant, plane.constant, 0.2)
       existing.center.lerp(plane.center, 0.2)
       existing.extent = THREE.MathUtils.lerp(existing.extent, plane.extent, 0.2)
-      existing.confidence = Math.min(1, existing.confidence + 0.1)
+      existing.confidence = Math.min(1, THREE.MathUtils.lerp(existing.confidence, plane.confidence, 0.4) + 0.1)
       existing.lastSeen = now
     } else {
       this.surfaces.push({
@@ -67,10 +75,11 @@ export class PlaneMapper {
         constant: plane.constant,
         center: plane.center,
         extent: plane.extent,
-        confidence: 0.6,
+        confidence: Math.max(0.5, plane.confidence),
         lastSeen: now,
       })
     }
+    this.decayAndPrune(now)
   }
 
   private samplePoints(
@@ -92,6 +101,8 @@ export class PlaneMapper {
       for (let x = 0; x < w; x += stride) {
         const i = y * w + x
         const d01 = depth.depth01[i] ?? 0.5
+        if (!Number.isFinite(d01)) continue
+        if (d01 < this.opts.minDepth01 || d01 > this.opts.maxDepth01) continue
         const z = THREE.MathUtils.lerp(this.opts.minDepthMeters, this.opts.maxDepthMeters, d01) * scaleMeters
 
         const nx = (x / (w - 1)) * 2 - 1
@@ -151,12 +162,27 @@ export class PlaneMapper {
       if (d > extent) extent = d
     }
 
+    const ratio = bestInliers.length / Math.max(1, points.length)
     return {
       normal: bestPlane.normal.clone(),
       constant: bestPlane.constant,
       center,
       extent: Math.min(2.0, extent),
+      confidence: THREE.MathUtils.clamp(ratio * 1.6, 0.3, 1),
     }
+  }
+
+  private decayAndPrune(now: number) {
+    const maxAge = this.opts.maxSurfaceAgeMs
+    for (const s of this.surfaces) {
+      const age = now - s.lastSeen
+      if (age > 0) {
+        const decay = Math.pow(this.opts.confidenceDecay, age / 1000)
+        s.confidence = Math.max(0, s.confidence * decay)
+      }
+    }
+    this.surfaces = this.surfaces.filter((s) => now - s.lastSeen <= maxAge && s.confidence > 0.2)
+    this.surfaces.sort((a, b) => b.confidence - a.confidence)
   }
 
   private findSimilarSurface(normal: THREE.Vector3, constant: number) {

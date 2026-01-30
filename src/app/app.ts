@@ -24,6 +24,7 @@ export async function startApp() {
   const ui = renderApp(app)
 
   const statusNode = ui.status
+  let baseStatus = 'Idle'
   function setStatus(text: string) {
     statusNode.textContent = text
   }
@@ -98,10 +99,11 @@ export async function startApp() {
     width: ui.overlayCanvas.width,
     height: ui.overlayCanvas.height,
     onStatus: (st, detail) => {
-      if (st === 'tracking') setStatus(`Tracking (${detail ?? 'ok'})`)
-      else if (st === 'lost') setStatus('Tracking lost')
-      else if (st === 'unavailable') setStatus('Tracking unavailable (place /vendor/alva_ar.js)')
-      else if (st === 'initializing') setStatus('Tracking initializing…')
+      if (st === 'tracking') baseStatus = `Tracking (${detail ?? 'ok'})`
+      else if (st === 'lost') baseStatus = 'Tracking lost'
+      else if (st === 'unavailable') baseStatus = 'Tracking unavailable (place /vendor/alva_ar.js)'
+      else if (st === 'initializing') baseStatus = 'Tracking initializing…'
+      setStatus(baseStatus)
     },
   })
 
@@ -111,6 +113,8 @@ export async function startApp() {
   let worldPlaneBody: import('cannon-es').Body | null = physics.addPlane(new THREE.Vector3(0, 1, 0), 0)
   let slamPlaneMesh: THREE.Mesh | null = null
   let depthPlaneMesh: THREE.Mesh | null = null
+  let currentPlaneSource: 'slam' | 'depth' | null = null
+  let lastPlaneSwitchT = 0
   const planeMapper = new PlaneMapper({
     maxDepthMeters: 2.4,
     minDepthMeters: 0.3,
@@ -185,6 +189,7 @@ export async function startApp() {
   let perfFrames = 0
   let perfDtSum = 0
   let perfSlow = 0
+  let lastStatsUi = lastT
   function frame(t: number) {
     const dt = Math.min((t - lastT) / 1000, 0.05)
     lastT = t
@@ -218,7 +223,26 @@ export async function startApp() {
         })
     }
 
-    if (slamPlane) {
+    const dominant = runDepth ? planeMapper.getSurfaces()[0] : undefined
+    const depthPlaneAvailable = Boolean(dominant && dominant.confidence >= 0.45)
+    const slamAvailable = Boolean(slamPlane)
+    const switchCooldown = 800
+    if (!currentPlaneSource) {
+      if (slamAvailable) currentPlaneSource = 'slam'
+      else if (depthPlaneAvailable) currentPlaneSource = 'depth'
+    } else if (currentPlaneSource === 'slam' && !slamAvailable) {
+      if (depthPlaneAvailable && t - lastPlaneSwitchT > switchCooldown) {
+        currentPlaneSource = 'depth'
+        lastPlaneSwitchT = t
+      }
+    } else if (currentPlaneSource === 'depth' && !depthPlaneAvailable) {
+      if (slamAvailable && t - lastPlaneSwitchT > switchCooldown) {
+        currentPlaneSource = 'slam'
+        lastPlaneSwitchT = t
+      }
+    }
+
+    if (currentPlaneSource === 'slam' && slamPlane) {
       if (!slamPlaneMesh) {
         const geom = new THREE.PlaneGeometry(1, 1)
         const mat = new THREE.MeshBasicMaterial({ color: 0x4c8bff, opacity: 0.25, transparent: true, side: THREE.DoubleSide })
@@ -239,27 +263,25 @@ export async function startApp() {
         worldPlaneBody.position.set(-normal.x * constant, -normal.y * constant, -normal.z * constant)
         worldPlaneBody.quaternion.setFromVectors(new CANNON.Vec3(0, 0, 1), new CANNON.Vec3(normal.x, normal.y, normal.z))
       }
-    } else if (runDepth) {
-      const dominant = planeMapper.getSurfaces()[0]
-      if (dominant) {
-        if (!depthPlaneMesh) {
-          const geom = new THREE.PlaneGeometry(1, 1)
-          const mat = new THREE.MeshBasicMaterial({ color: 0x4cffb5, opacity: 0.2, transparent: true, side: THREE.DoubleSide })
-          depthPlaneMesh = new THREE.Mesh(geom, mat)
-          sceneBundle.scene.add(depthPlaneMesh)
-        }
-        depthPlaneMesh.visible = true
-        const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dominant.normal)
-        depthPlaneMesh.position.copy(dominant.center)
-        depthPlaneMesh.quaternion.copy(quat)
-        depthPlaneMesh.scale.set(dominant.extent * 2, dominant.extent * 2, 1)
-        if (!worldPlaneBody) {
-          worldPlaneBody = physics.addPlane(dominant.normal, dominant.constant)
-        } else {
-          const n = dominant.normal
-          worldPlaneBody.position.set(-n.x * dominant.constant, -n.y * dominant.constant, -n.z * dominant.constant)
-          worldPlaneBody.quaternion.setFromVectors(new CANNON.Vec3(0, 0, 1), new CANNON.Vec3(n.x, n.y, n.z))
-        }
+    } else if (currentPlaneSource === 'depth' && dominant) {
+      if (!depthPlaneMesh) {
+        const geom = new THREE.PlaneGeometry(1, 1)
+        const mat = new THREE.MeshBasicMaterial({ color: 0x4cffb5, opacity: 0.2, transparent: true, side: THREE.DoubleSide })
+        depthPlaneMesh = new THREE.Mesh(geom, mat)
+        sceneBundle.scene.add(depthPlaneMesh)
+      }
+      depthPlaneMesh.visible = true
+      const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dominant.normal)
+      depthPlaneMesh.position.copy(dominant.center)
+      depthPlaneMesh.quaternion.copy(quat)
+      depthPlaneMesh.scale.set(dominant.extent * 2, dominant.extent * 2, 1)
+      if (slamPlaneMesh) slamPlaneMesh.visible = false
+      if (!worldPlaneBody) {
+        worldPlaneBody = physics.addPlane(dominant.normal, dominant.constant)
+      } else {
+        const n = dominant.normal
+        worldPlaneBody.position.set(-n.x * dominant.constant, -n.y * dominant.constant, -n.z * dominant.constant)
+        worldPlaneBody.quaternion.setFromVectors(new CANNON.Vec3(0, 0, 1), new CANNON.Vec3(n.x, n.y, n.z))
       }
     }
 
@@ -293,6 +315,18 @@ export async function startApp() {
     }
 
     sceneBundle.renderer.render(sceneBundle.scene, sceneBundle.camera)
+
+    if (t - lastStatsUi > 800 && baseStatus.startsWith('Tracking')) {
+      const stats = tracking.getStats()
+      const total = stats.tracked + stats.lost
+      const quality = total > 0 ? stats.tracked / total : 0
+      const jitterPos = stats.jitterPos
+      const jitterAng = THREE.MathUtils.radToDeg(stats.jitterAng)
+      setStatus(
+        `${baseStatus} | q ${(quality * 100).toFixed(0)}% | jitter ${jitterPos.toFixed(2)}m/s ${jitterAng.toFixed(1)}deg/s`,
+      )
+      lastStatsUi = t
+    }
 
     if (t - perfLastLog > 2000) {
       const elapsed = (t - perfLastLog) / 1000
