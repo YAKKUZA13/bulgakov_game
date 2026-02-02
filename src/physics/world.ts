@@ -20,6 +20,7 @@ export class PhysicsWorld {
 
   step(dt: number) {
     const fixed = 1 / 60
+    // странно что порядок параметров такой, в доках наоборот (dt,fixed)
     this.world.step(fixed, dt, 3)
     for (const b of this.bodies) {
       b.mesh.position.set(b.body.position.x, b.body.position.y, b.body.position.z)
@@ -58,6 +59,20 @@ export class PhysicsWorld {
     const body = new CANNON.Body({ mass })
     body.addShape(shape)
     body.position.set(mesh.position.x, mesh.position.y, mesh.position.z)
+    this.world.addBody(body)
+    this.bodies.push({ body, mesh })
+    return body
+  }
+
+  addCylinder(mesh: THREE.Mesh, radius: number, height: number, mass = 1) {
+    // cannon-es doesn't have a built-in cylinder, so we approximate with a box
+    // For a cylinder, we use a box with dimensions matching the cylinder's bounding box
+    const halfExtents = new CANNON.Vec3(radius, height / 2, radius)
+    const shape = new CANNON.Box(halfExtents)
+    const body = new CANNON.Body({ mass })
+    body.addShape(shape)
+    body.position.set(mesh.position.x, mesh.position.y, mesh.position.z)
+    body.quaternion.set(mesh.quaternion.x, mesh.quaternion.y, mesh.quaternion.z, mesh.quaternion.w)
     this.world.addBody(body)
     this.bodies.push({ body, mesh })
     return body

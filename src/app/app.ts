@@ -33,6 +33,7 @@ export async function startApp() {
   let mode: GameMode = 'runner'
   let runDepth = false
   let showSlamPoints = false
+  let launchStart: { x: number; y: number } | null = null
   let scaleMeters = Number(ui.scaleRange.value) || 1
   const overlay2dMaybe = ui.overlayCanvas.getContext('2d')
   if (!overlay2dMaybe) throw new Error('2D overlay context missing')
@@ -135,8 +136,12 @@ export async function startApp() {
       angry.clear()
       treasure.clear()
     }
-    if (next === 'angry') angry.reset(new THREE.Vector3(0, 0.5, -1))
+    if (next === 'angry') {
+      angry.hideTrajectory()
+      angry.reset(new THREE.Vector3(0, 0.5, -1))
+    }
     if (next === 'treasure') treasure.reset(new THREE.Vector3(0, 0.6, -1))
+    launchStart = null
   }
 
   ui.btnModeRunner.addEventListener('click', () => setMode('runner'))
@@ -161,7 +166,52 @@ export async function startApp() {
     runner.setPosition(pos)
   }
 
-  let launchStart: { x: number; y: number } | null = null
+  function updateTrajectory(clientX: number, clientY: number) {
+    if (mode !== 'angry' || !launchStart) return
+
+    const rect = ui.overlayCanvas.getBoundingClientRect()
+    const w = rect.width || window.innerWidth
+    const h = rect.height || window.innerHeight
+
+    const dx = clientX - launchStart.x
+    const dy = clientY - launchStart.y
+    const swipeLength = Math.hypot(dx, dy)
+
+    // Базовое направление - куда смотрит камера (вперёд)
+    const forward = new THREE.Vector3()
+    sceneBundle.camera.getWorldDirection(forward)
+
+    // Получаем правый и верхний векторы камеры
+    const up = new THREE.Vector3()
+    up.copy(sceneBundle.camera.up).normalize()
+
+    const right = new THREE.Vector3()
+    right.crossVectors(forward, up).normalize()
+
+    // Если свайп слишком короткий, используем только направление камеры
+    if (swipeLength < 10) {
+      const power = Math.min(6, swipeLength / 40)
+      const from = new THREE.Vector3().copy(sceneBundle.camera.position).add(forward.clone().multiplyScalar(0.4))
+      angry.showTrajectory(from, forward, power)
+      return
+    }
+
+    // Преобразуем экранное смещение в мировое направление
+    // Нормализуем смещение относительно размера экрана
+    const normalizedDx = (dx / w) * 2.0 // Масштабируем для чувствительности
+    const normalizedDy = -(dy / h) * 2.0 // Инвертируем Y (экранные координаты)
+
+    // Комбинируем базовое направление с экранным смещением
+    const dir = forward.clone()
+      .add(right.clone().multiplyScalar(normalizedDx))
+      .add(up.clone().multiplyScalar(normalizedDy))
+      .normalize()
+
+    const power = Math.min(6, swipeLength / 40)
+    const from = new THREE.Vector3().copy(sceneBundle.camera.position).add(dir.clone().multiplyScalar(0.4))
+    angry.showTrajectory(from, dir, power)
+  }
+
   ui.overlayCanvas.addEventListener('pointerdown', (ev) => {
     if (mode === 'runner') {
       placeRunnerAtPointer(ev)
@@ -169,18 +219,66 @@ export async function startApp() {
     }
     if (mode !== 'angry') return
     launchStart = { x: ev.clientX, y: ev.clientY }
+    updateTrajectory(ev.clientX, ev.clientY)
   })
+
+  ui.overlayCanvas.addEventListener('pointermove', (ev) => {
+    if (mode !== 'angry' || !launchStart) return
+    updateTrajectory(ev.clientX, ev.clientY)
+  })
+
   ui.overlayCanvas.addEventListener('pointerup', (ev) => {
     if (mode !== 'angry' || !launchStart) return
+
+    const rect = ui.overlayCanvas.getBoundingClientRect()
+    const w = rect.width || window.innerWidth
+    const h = rect.height || window.innerHeight
+
     const dx = ev.clientX - launchStart.x
     const dy = ev.clientY - launchStart.y
-    const power = Math.min(6, Math.hypot(dx, dy) / 40)
-    const dir = new THREE.Vector3()
-    sceneBundle.camera.getWorldDirection(dir)
-    dir.y += -dy * 0.002
+    const swipeLength = Math.hypot(dx, dy)
+
+    // Базовое направление - куда смотрит камера (вперёд)
+    const forward = new THREE.Vector3()
+    sceneBundle.camera.getWorldDirection(forward)
+
+    // Получаем правый и верхний векторы камеры
+    const up = new THREE.Vector3()
+    up.copy(sceneBundle.camera.up).normalize()
+
+    const right = new THREE.Vector3()
+    right.crossVectors(forward, up).normalize()
+
+    // Если свайп слишком короткий, используем только направление камеры
+    if (swipeLength < 10) {
+      const power = Math.min(6, swipeLength / 40)
+      const from = new THREE.Vector3().copy(sceneBundle.camera.position).add(forward.clone().multiplyScalar(0.4))
+      angry.launch(from, forward, power)
+      launchStart = null
+      return
+    }
+
+    // Преобразуем экранное смещение в мировое направление
+    const normalizedDx = (dx / w) * 2.0
+    const normalizedDy = -(dy / h) * 2.0
+
+    // Комбинируем базовое направление с экранным смещением
+    const dir = forward.clone()
+      .add(right.clone().multiplyScalar(normalizedDx))
+      .add(up.clone().multiplyScalar(normalizedDy))
+      .normalize()
+
+    const power = Math.min(6, swipeLength / 40)
     const from = new THREE.Vector3().copy(sceneBundle.camera.position).add(dir.clone().multiplyScalar(0.4))
     angry.launch(from, dir, power)
     launchStart = null
+  })
+
+  ui.overlayCanvas.addEventListener('pointercancel', () => {
+    if (mode === 'angry') {
+      angry.hideTrajectory()
+      launchStart = null
+    }
   })
 
   let lastT = performance.now()
