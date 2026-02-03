@@ -138,7 +138,8 @@ export async function startApp() {
     }
     if (next === 'angry') {
       angry.hideTrajectory()
-      angry.reset(new THREE.Vector3(0, 0.5, -1))
+      // Reset будет вызван автоматически при установке плоскости
+      angry.reset()
     }
     if (next === 'treasure') treasure.reset(new THREE.Vector3(0, 0.6, -1))
     launchStart = null
@@ -177,22 +178,29 @@ export async function startApp() {
     const dy = clientY - launchStart.y
     const swipeLength = Math.hypot(dx, dy)
 
-    // Базовое направление - куда смотрит камера (вперёд)
-    const forward = new THREE.Vector3()
-    sceneBundle.camera.getWorldDirection(forward)
+    const from = new THREE.Vector3().copy(sceneBundle.camera.position)
+
+    // Пытаемся получить направление к плоскости
+    let baseDir = angry.getDirectionToPlane(from)
+
+    // Если плоскости нет, используем направление камеры
+    if (!baseDir) {
+      baseDir = new THREE.Vector3()
+      sceneBundle.camera.getWorldDirection(baseDir)
+    }
 
     // Получаем правый и верхний векторы камеры
     const up = new THREE.Vector3()
     up.copy(sceneBundle.camera.up).normalize()
 
     const right = new THREE.Vector3()
-    right.crossVectors(forward, up).normalize()
+    right.crossVectors(baseDir, up).normalize()
 
-    // Если свайп слишком короткий, используем только направление камеры
+    // Если свайп слишком короткий, используем только базовое направление
     if (swipeLength < 10) {
       const power = Math.min(6, swipeLength / 40)
-      const from = new THREE.Vector3().copy(sceneBundle.camera.position).add(forward.clone().multiplyScalar(0.4))
-      angry.showTrajectory(from, forward, power)
+      const launchFrom = from.clone().add(baseDir.clone().multiplyScalar(0.4))
+      angry.showTrajectory(launchFrom, baseDir, power)
       return
     }
 
@@ -202,14 +210,14 @@ export async function startApp() {
     const normalizedDy = -(dy / h) * 2.0 // Инвертируем Y (экранные координаты)
 
     // Комбинируем базовое направление с экранным смещением
-    const dir = forward.clone()
+    const dir = baseDir.clone()
       .add(right.clone().multiplyScalar(normalizedDx))
       .add(up.clone().multiplyScalar(normalizedDy))
       .normalize()
 
     const power = Math.min(6, swipeLength / 40)
-    const from = new THREE.Vector3().copy(sceneBundle.camera.position).add(dir.clone().multiplyScalar(0.4))
-    angry.showTrajectory(from, dir, power)
+    const launchFrom = from.clone().add(dir.clone().multiplyScalar(0.4))
+    angry.showTrajectory(launchFrom, dir, power)
   }
 
   ui.overlayCanvas.addEventListener('pointerdown', (ev) => {
@@ -218,17 +226,20 @@ export async function startApp() {
       return
     }
     if (mode !== 'angry') return
+    ev.preventDefault() // Предотвращаем стандартное поведение браузера на мобильных
     launchStart = { x: ev.clientX, y: ev.clientY }
     updateTrajectory(ev.clientX, ev.clientY)
   })
 
   ui.overlayCanvas.addEventListener('pointermove', (ev) => {
     if (mode !== 'angry' || !launchStart) return
+    ev.preventDefault() // Предотвращаем стандартное поведение браузера на мобильных
     updateTrajectory(ev.clientX, ev.clientY)
   })
 
   ui.overlayCanvas.addEventListener('pointerup', (ev) => {
     if (mode !== 'angry' || !launchStart) return
+    ev.preventDefault() // Предотвращаем стандартное поведение браузера на мобильных
 
     const rect = ui.overlayCanvas.getBoundingClientRect()
     const w = rect.width || window.innerWidth
@@ -238,22 +249,29 @@ export async function startApp() {
     const dy = ev.clientY - launchStart.y
     const swipeLength = Math.hypot(dx, dy)
 
-    // Базовое направление - куда смотрит камера (вперёд)
-    const forward = new THREE.Vector3()
-    sceneBundle.camera.getWorldDirection(forward)
+    const from = new THREE.Vector3().copy(sceneBundle.camera.position)
+
+    // Пытаемся получить направление к плоскости
+    let baseDir = angry.getDirectionToPlane(from)
+
+    // Если плоскости нет, используем направление камеры
+    if (!baseDir) {
+      baseDir = new THREE.Vector3()
+      sceneBundle.camera.getWorldDirection(baseDir)
+    }
 
     // Получаем правый и верхний векторы камеры
     const up = new THREE.Vector3()
     up.copy(sceneBundle.camera.up).normalize()
 
     const right = new THREE.Vector3()
-    right.crossVectors(forward, up).normalize()
+    right.crossVectors(baseDir, up).normalize()
 
-    // Если свайп слишком короткий, используем только направление камеры
+    // Если свайп слишком короткий, используем только базовое направление
     if (swipeLength < 10) {
       const power = Math.min(6, swipeLength / 40)
-      const from = new THREE.Vector3().copy(sceneBundle.camera.position).add(forward.clone().multiplyScalar(0.4))
-      angry.launch(from, forward, power)
+      const launchFrom = from.clone().add(baseDir.clone().multiplyScalar(0.4))
+      angry.launch(launchFrom, baseDir, power)
       launchStart = null
       return
     }
@@ -263,22 +281,72 @@ export async function startApp() {
     const normalizedDy = -(dy / h) * 2.0
 
     // Комбинируем базовое направление с экранным смещением
-    const dir = forward.clone()
+    const dir = baseDir.clone()
       .add(right.clone().multiplyScalar(normalizedDx))
       .add(up.clone().multiplyScalar(normalizedDy))
       .normalize()
 
     const power = Math.min(6, swipeLength / 40)
-    const from = new THREE.Vector3().copy(sceneBundle.camera.position).add(dir.clone().multiplyScalar(0.4))
-    angry.launch(from, dir, power)
+    const launchFrom = from.clone().add(dir.clone().multiplyScalar(0.4))
+    angry.launch(launchFrom, dir, power)
     launchStart = null
   })
 
-  ui.overlayCanvas.addEventListener('pointercancel', () => {
-    if (mode === 'angry') {
-      angry.hideTrajectory()
-      launchStart = null
+  ui.overlayCanvas.addEventListener('pointercancel', (ev) => {
+    if (mode !== 'angry' || !launchStart) return
+    ev.preventDefault() // Предотвращаем стандартное поведение браузера на мобильных
+
+    // На мобильных устройствах pointercancel может сработать вместо pointerup
+    // Поэтому пытаемся запустить снаряд, если был начат жест
+    const rect = ui.overlayCanvas.getBoundingClientRect()
+    const w = rect.width || window.innerWidth
+    const h = rect.height || window.innerHeight
+
+    const dx = ev.clientX - launchStart.x
+    const dy = ev.clientY - launchStart.y
+    const swipeLength = Math.hypot(dx, dy)
+
+    const from = new THREE.Vector3().copy(sceneBundle.camera.position)
+
+    // Пытаемся получить направление к плоскости
+    let baseDir = angry.getDirectionToPlane(from)
+
+    // Если плоскости нет, используем направление камеры
+    if (!baseDir) {
+      baseDir = new THREE.Vector3()
+      sceneBundle.camera.getWorldDirection(baseDir)
     }
+
+    // Получаем правый и верхний векторы камеры
+    const up = new THREE.Vector3()
+    up.copy(sceneBundle.camera.up).normalize()
+
+    const right = new THREE.Vector3()
+    right.crossVectors(baseDir, up).normalize()
+
+    // Если свайп слишком короткий, используем только базовое направление
+    if (swipeLength < 10) {
+      const power = Math.min(6, swipeLength / 40)
+      const launchFrom = from.clone().add(baseDir.clone().multiplyScalar(0.4))
+      angry.launch(launchFrom, baseDir, power)
+      launchStart = null
+      return
+    }
+
+    // Преобразуем экранное смещение в мировое направление
+    const normalizedDx = (dx / w) * 2.0
+    const normalizedDy = -(dy / h) * 2.0
+
+    // Комбинируем базовое направление с экранным смещением
+    const dir = baseDir.clone()
+      .add(right.clone().multiplyScalar(normalizedDx))
+      .add(up.clone().multiplyScalar(normalizedDy))
+      .normalize()
+
+    const power = Math.min(6, swipeLength / 40)
+    const launchFrom = from.clone().add(dir.clone().multiplyScalar(0.4))
+    angry.launch(launchFrom, dir, power)
+    launchStart = null
   })
 
   let lastT = performance.now()
@@ -298,6 +366,11 @@ export async function startApp() {
     tracking.update(dt)
     const pose = tracking.getPose()
     sceneBundle.camera.position.copy(pose.position)
+    // В режиме angry поднимаем камеру выше плоскости с фигурами
+    if (mode === 'angry') {
+      sceneBundle.camera.position.y += 0.3
+      sceneBundle.camera.position.x += 0.3
+    }
     sceneBundle.camera.quaternion.copy(pose.quaternion)
 
     const slamPlane = tracking.getPlane()
@@ -347,6 +420,7 @@ export async function startApp() {
         slamPlaneMesh = new THREE.Mesh(geom, mat)
         sceneBundle.scene.add(slamPlaneMesh)
       }
+      slamPlaneMesh.visible = true
       const pos = slamPlane.position.clone().multiplyScalar(scaleMeters)
       slamPlaneMesh.position.copy(pos)
       slamPlaneMesh.quaternion.copy(slamPlane.quaternion)
@@ -360,6 +434,16 @@ export async function startApp() {
       } else {
         worldPlaneBody.position.set(-normal.x * constant, -normal.y * constant, -normal.z * constant)
         worldPlaneBody.quaternion.setFromVectors(new CANNON.Vec3(0, 0, 1), new CANNON.Vec3(normal.x, normal.y, normal.z))
+      }
+
+      // Обновляем плоскость в angry mode
+      if (mode === 'angry') {
+        const wasPlaneNull = !angry.state.plane
+        angry.setPlane(pos, slamPlane.quaternion)
+        // Если плоскость только что появилась, пересоздаём фигуры
+        if (wasPlaneNull) {
+          angry.reset()
+        }
       }
     } else if (currentPlaneSource === 'depth' && dominant) {
       if (!depthPlaneMesh) {
@@ -377,9 +461,23 @@ export async function startApp() {
       if (!worldPlaneBody) {
         worldPlaneBody = physics.addPlane(dominant.normal, dominant.constant)
       } else {
-        const n = dominant.normal
-        worldPlaneBody.position.set(-n.x * dominant.constant, -n.y * dominant.constant, -n.z * dominant.constant)
-        worldPlaneBody.quaternion.setFromVectors(new CANNON.Vec3(0, 0, 1), new CANNON.Vec3(n.x, n.y, n.z))
+        worldPlaneBody.position.set(-dominant.normal.x * dominant.constant, -dominant.normal.y * dominant.constant, -dominant.normal.z * dominant.constant)
+        worldPlaneBody.quaternion.setFromVectors(new CANNON.Vec3(0, 0, 1), new CANNON.Vec3(dominant.normal.x, dominant.normal.y, dominant.normal.z))
+      }
+
+      // Также обновляем для depth plane
+      if (mode === 'angry') {
+        const wasPlaneNull = !angry.state.plane
+        angry.setPlane(dominant.center, quat)
+        if (wasPlaneNull) {
+          angry.reset()
+        }
+      }
+    } else {
+      // Плоскость исчезла
+      if (slamPlaneMesh) slamPlaneMesh.visible = false
+      if (mode === 'angry') {
+        angry.clearPlane()
       }
     }
 

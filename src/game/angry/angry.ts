@@ -1,11 +1,15 @@
 import * as THREE from 'three'
 import type { PhysicsWorld } from '../../physics/world'
-import { createTowerModelConicalBlueTower, createTowerModelGreenPillar, createTowerModelRedTower, createTowerModelYellowWideTower } from './towerModels'
 
 export type AngryState = {
   structures: import('cannon-es').Body[]
   projectiles: import('cannon-es').Body[]
   trajectoryLine: THREE.Line | null
+  plane: {
+    position: THREE.Vector3
+    quaternion: THREE.Quaternion
+    normal: THREE.Vector3
+  } | null
 }
 
 export type TrajectoryPoint = {
@@ -18,29 +22,73 @@ export function createAngryMode(params: {
   physics: PhysicsWorld
 }) {
   const { scene, physics } = params
-  const state: AngryState = { structures: [], projectiles: [], trajectoryLine: null }
+  const state: AngryState = { structures: [], projectiles: [], trajectoryLine: null, plane: null }
 
   function clearBodies(bodies: import('cannon-es').Body[]) {
     for (const b of bodies) physics.removeBody(b)
     bodies.length = 0
   }
 
-  function reset(structureCenter = new THREE.Vector3(0, 0.5, -1)) {
+  /**
+   * Вычисляет точку на плоскости относительно центра плоскости
+   */
+  function getPointOnPlane(localX: number, localY: number): THREE.Vector3 {
+    if (!state.plane) {
+      // Fallback: используем дефолтную позицию
+      return new THREE.Vector3(localX, 0.5, localY)
+    }
+
+    // Локальные оси плоскости (в пространстве плоскости)
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(state.plane.quaternion)
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(state.plane.quaternion)
+
+    // Вычисляем позицию на плоскости
+    const point = state.plane.position.clone()
+      .add(right.multiplyScalar(localX))
+      .add(up.multiplyScalar(localY))
+
+    return point
+  }
+
+  function reset(structureCenter?: THREE.Vector3) {
     clearBodies(state.structures)
     clearBodies(state.projectiles)
 
-    const basePos = structureCenter.clone()
+    // Если есть плоскость, используем её для размещения фигур
+    let basePos: THREE.Vector3
+    if (state.plane) {
+      // Размещаем фигуры на плоскости, немного впереди центра
+      basePos = getPointOnPlane(0, -0.5)
+      // Поднимаем немного выше плоскости (на половину высоты блока)
+      basePos.add(state.plane.normal.clone().multiplyScalar(0.125))
+    } else {
+      // Fallback: используем переданную позицию или дефолтную
+      basePos = structureCenter?.clone() ?? new THREE.Vector3(0, 0.5, -1)
+    }
+
     const size = new THREE.Vector3(0.25, 0.25, 0.25)
     const mat = new THREE.MeshStandardMaterial({ color: 0xffa24f })
 
     // Классические блоки
-    // for (let i = 0; i < 6; i++) {
-    //   const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), mat)
-    //   mesh.position.set(basePos.x + (i % 3) * 0.3, basePos.y + Math.floor(i / 3) * 0.3, basePos.z)
-    //   scene.add(mesh)
-    //   const body = physics.addBox(mesh, size, 0.7)
-    //   state.structures.push(body)
-    // }
+    for (let i = 0; i < 9; i++) {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), mat)
+
+      if (state.plane) {
+        // Размещаем на плоскости с учетом её ориентации
+        const localX = (i % 3 - 1) * 0.3
+        const localY = -0.5 - Math.floor(i / 3) * 0.3
+        const planePos = getPointOnPlane(localX, localY)
+        // Поднимаем на половину высоты блока над плоскостью
+        mesh.position.copy(planePos).add(state.plane.normal.clone().multiplyScalar(0.125))
+      } else {
+        // Fallback: обычное размещение
+        mesh.position.set(basePos.x + (i % 3) * 0.3, basePos.y + Math.floor(i / 3) * 0.3, basePos.z)
+      }
+
+      scene.add(mesh)
+      const body = physics.addBox(mesh, size, 0.7)
+      state.structures.push(body)
+    }
 
     // Красные башни
     // for (let i = 0; i < 3; i++) {
@@ -94,21 +142,21 @@ export function createAngryMode(params: {
     // }
 
     // Жёлтые пирамиды
-    for (let i = 0; i < 3; i++) {
-      const towerPos = new THREE.Vector3(
-        basePos.x + (i - 1) * 0.6,
-        basePos.y + 0.15,
-        basePos.z - 1.0,
-      )
+    // for (let i = 0; i < 3; i++) {
+    //   const towerPos = new THREE.Vector3(
+    //     basePos.x + (i - 1) * 0.6,
+    //     basePos.y + 0.15,
+    //     basePos.z - 1.0,
+    //   )
 
-      const model = createTowerModelYellowWideTower({
-        scene,
-        physics,
-        position: towerPos,
-      })
+    //   const model = createTowerModelYellowWideTower({
+    //     scene,
+    //     physics,
+    //     position: towerPos,
+    //   })
 
-      state.structures.push(model.body)
-    }
+    //   state.structures.push(model.body)
+    // }
   }
 
   /**
@@ -216,12 +264,53 @@ export function createAngryMode(params: {
     state.projectiles.push(body)
   }
 
+  /**
+   * Устанавливает плоскость для размещения фигур
+   */
+  function setPlane(position: THREE.Vector3, quaternion: THREE.Quaternion) {
+    const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(quaternion).normalize()
+    state.plane = { position: position.clone(), quaternion: quaternion.clone(), normal }
+  }
+
+  /**
+   * Очищает информацию о плоскости
+   */
+  function clearPlane() {
+    state.plane = null
+  }
+
+  /**
+   * Получает направление к плоскости от заданной точки
+   */
+  function getDirectionToPlane(from: THREE.Vector3): THREE.Vector3 | null {
+    if (!state.plane) return null
+
+    // Вычисляем точку на плоскости перед камерой
+    // Проецируем позицию камеры на плоскость
+    const toPlane = state.plane.position.clone().sub(from)
+    const distanceToPlane = toPlane.dot(state.plane.normal)
+    const projectedPoint = from.clone().add(state.plane.normal.clone().multiplyScalar(distanceToPlane))
+
+    // Смещаем точку немного вперёд от центра плоскости (в локальных координатах плоскости)
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(state.plane.quaternion)
+    const targetPoint = projectedPoint.clone().add(forward.multiplyScalar(0.3))
+
+    // Направление от камеры к точке на плоскости
+    const direction = targetPoint.clone().sub(from)
+    const length = direction.length()
+    if (length < 0.001) return null // Слишком близко к плоскости
+    return direction.normalize()
+  }
+
   return {
     state,
     reset,
     launch,
     showTrajectory,
     hideTrajectory,
+    setPlane,
+    clearPlane,
+    getDirectionToPlane,
     clear: () => {
       hideTrajectory()
       clearBodies(state.structures)
