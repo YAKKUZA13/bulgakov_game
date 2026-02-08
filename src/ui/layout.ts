@@ -12,6 +12,8 @@ export type AppElements = {
   btnModeTreasure: HTMLButtonElement
   status: HTMLDivElement
   toast: HTMLDivElement
+  scoreHud: HTMLDivElement
+  powerHud: HTMLDivElement
   gameControls: HTMLElement
   joyBase: HTMLDivElement
   joyKnob: HTMLDivElement
@@ -31,6 +33,14 @@ export function renderApp(root: HTMLElement): AppElements {
 
       <button id="btnToggleUi" class="btn uiToggle">Close</button>
       <div id="toast" class="toast" aria-live="polite"></div>
+      <div id="scoreHud" class="scoreHud">Score: 0</div>
+      <div id="powerHud" class="powerHud" aria-hidden="true">
+        <div class="powerTrack">
+          <div class="powerFill" style="width: 0%"></div>
+        </div>
+        <div class="powerLabel">Power</div>
+        <div class="powerValue">0</div>
+      </div>
 
       <section id="gameControls" class="gameControls" aria-label="Game controls">
         <div class="joyWrap">
@@ -99,6 +109,8 @@ export function renderApp(root: HTMLElement): AppElements {
     btnModeTreasure: q<HTMLButtonElement>('#btnModeTreasure'),
     status: q<HTMLDivElement>('#status'),
     toast: q<HTMLDivElement>('#toast'),
+    scoreHud: q<HTMLDivElement>('#scoreHud'),
+    powerHud: q<HTMLDivElement>('#powerHud'),
     gameControls: q<HTMLElement>('#gameControls'),
     joyBase: q<HTMLDivElement>('#joyBase'),
     joyKnob: q<HTMLDivElement>('#joyKnob'),

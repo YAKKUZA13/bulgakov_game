@@ -35,6 +35,9 @@ export async function startApp() {
   let showSlamPoints = false
   let launchStart: { x: number; y: number } | null = null
   let scaleMeters = Number(ui.scaleRange.value) || 1
+  const maxPower = 6
+  const aimScaleX = 2.2
+  const aimScaleY = 2.8
   const overlay2dMaybe = ui.overlayCanvas.getContext('2d')
   if (!overlay2dMaybe) throw new Error('2D overlay context missing')
   const overlay2d = overlay2dMaybe
@@ -138,9 +141,17 @@ export async function startApp() {
     }
     if (next === 'angry') {
       angry.hideTrajectory()
-      angry.reset(new THREE.Vector3(0, 0.5, -1))
+      angry.reset()
+      runDepth = false
+      showSlamPoints = false
+      ui.chkRunDepth.checked = false
+      ui.chkSlamPoints.checked = false
+      overlay2d.clearRect(0, 0, ui.overlayCanvas.width, ui.overlayCanvas.height)
+      ui.scoreHud.textContent = `Score: ${angry.getScore()}`
     }
     if (next === 'treasure') treasure.reset(new THREE.Vector3(0, 0.6, -1))
+    ui.scoreHud.style.display = next === 'angry' ? 'block' : 'none'
+    ui.powerHud.style.display = 'none'
     launchStart = null
   }
 
@@ -176,6 +187,8 @@ export async function startApp() {
     const dx = clientX - launchStart.x
     const dy = clientY - launchStart.y
     const swipeLength = Math.hypot(dx, dy)
+    const power = Math.min(maxPower, swipeLength / 40)
+    updatePowerHud(power)
 
     // Базовое направление - куда смотрит камера (вперёд)
     const forward = new THREE.Vector3()
@@ -190,7 +203,6 @@ export async function startApp() {
 
     // Если свайп слишком короткий, используем только направление камеры
     if (swipeLength < 10) {
-      const power = Math.min(6, swipeLength / 40)
       const from = new THREE.Vector3().copy(sceneBundle.camera.position).add(forward.clone().multiplyScalar(0.4))
       angry.showTrajectory(from, forward, power)
       return
@@ -198,8 +210,8 @@ export async function startApp() {
 
     // Преобразуем экранное смещение в мировое направление
     // Нормализуем смещение относительно размера экрана
-    const normalizedDx = (dx / w) * 2.0 // Масштабируем для чувствительности
-    const normalizedDy = -(dy / h) * 2.0 // Инвертируем Y (экранные координаты)
+    const normalizedDx = (dx / w) * aimScaleX // Масштабируем для чувствительности
+    const normalizedDy = -(dy / h) * aimScaleY // Инвертируем Y (экранные координаты)
 
     // Комбинируем базовое направление с экранным смещением
     const dir = forward.clone()
@@ -207,7 +219,6 @@ export async function startApp() {
       .add(up.clone().multiplyScalar(normalizedDy))
       .normalize()
 
-    const power = Math.min(6, swipeLength / 40)
     const from = new THREE.Vector3().copy(sceneBundle.camera.position).add(dir.clone().multiplyScalar(0.4))
     angry.showTrajectory(from, dir, power)
   }
@@ -220,6 +231,7 @@ export async function startApp() {
     if (mode !== 'angry') return
     launchStart = { x: ev.clientX, y: ev.clientY }
     updateTrajectory(ev.clientX, ev.clientY)
+    ui.powerHud.style.display = 'flex'
   })
 
   ui.overlayCanvas.addEventListener('pointermove', (ev) => {
@@ -237,6 +249,7 @@ export async function startApp() {
     const dx = ev.clientX - launchStart.x
     const dy = ev.clientY - launchStart.y
     const swipeLength = Math.hypot(dx, dy)
+    const power = Math.min(maxPower, swipeLength / 40)
 
     // Базовое направление - куда смотрит камера (вперёд)
     const forward = new THREE.Vector3()
@@ -251,16 +264,16 @@ export async function startApp() {
 
     // Если свайп слишком короткий, используем только направление камеры
     if (swipeLength < 10) {
-      const power = Math.min(6, swipeLength / 40)
       const from = new THREE.Vector3().copy(sceneBundle.camera.position).add(forward.clone().multiplyScalar(0.4))
       angry.launch(from, forward, power)
       launchStart = null
+      ui.powerHud.style.display = 'none'
       return
     }
 
     // Преобразуем экранное смещение в мировое направление
-    const normalizedDx = (dx / w) * 2.0
-    const normalizedDy = -(dy / h) * 2.0
+    const normalizedDx = (dx / w) * aimScaleX
+    const normalizedDy = -(dy / h) * aimScaleY
 
     // Комбинируем базовое направление с экранным смещением
     const dir = forward.clone()
@@ -268,18 +281,28 @@ export async function startApp() {
       .add(up.clone().multiplyScalar(normalizedDy))
       .normalize()
 
-    const power = Math.min(6, swipeLength / 40)
     const from = new THREE.Vector3().copy(sceneBundle.camera.position).add(dir.clone().multiplyScalar(0.4))
     angry.launch(from, dir, power)
     launchStart = null
+    ui.powerHud.style.display = 'none'
   })
 
   ui.overlayCanvas.addEventListener('pointercancel', () => {
     if (mode === 'angry') {
       angry.hideTrajectory()
       launchStart = null
+      ui.powerHud.style.display = 'none'
     }
   })
+
+  function updatePowerHud(power: number) {
+    const fill = ui.powerHud.querySelector<HTMLDivElement>('.powerFill')
+    if (!fill) return
+    const value = ui.powerHud.querySelector<HTMLDivElement>('.powerValue')
+    const pct = Math.max(0, Math.min(1, power / maxPower)) * 100
+    fill.style.width = `${pct.toFixed(0)}%`
+    if (value) value.textContent = power.toFixed(1)
+  }
 
   let lastT = performance.now()
   let lastDepthT = lastT
@@ -297,89 +320,110 @@ export async function startApp() {
 
     tracking.update(dt)
     const pose = tracking.getPose()
-    sceneBundle.camera.position.copy(pose.position)
-    sceneBundle.camera.quaternion.copy(pose.quaternion)
+    if (mode === 'angry') {
+      sceneBundle.camera.position.copy(pose.position)
+      sceneBundle.camera.quaternion.copy(pose.quaternion)
+    } else {
+      sceneBundle.camera.position.copy(pose.position)
+      sceneBundle.camera.quaternion.copy(pose.quaternion)
 
-    const slamPlane = tracking.getPlane()
+      const slamPlane = tracking.getPlane()
 
-    if (runDepth && activeStream && t - lastDepthT > 1500 && ui.video.videoWidth > 0) {
-      lastDepthT = t
-      const depthStart = performance.now()
-      estimateDepthSingleShot(ui.video, {
-        viewportW: ui.overlayCanvas.clientWidth || window.innerWidth,
-        viewportH: ui.overlayCanvas.clientHeight || window.innerHeight,
-        captureW: 256,
-        textureW: 384,
-      })
-        .then((res) => {
-          planeMapper.updateFromDepth(res, sceneBundle.camera, pose, scaleMeters)
-          const ms = performance.now() - depthStart
-          console.info(`[depth] ${ms.toFixed(0)}ms ${res.width}x${res.height}`)
+      if (runDepth && activeStream && t - lastDepthT > 1500 && ui.video.videoWidth > 0) {
+        lastDepthT = t
+        const depthStart = performance.now()
+        estimateDepthSingleShot(ui.video, {
+          viewportW: ui.overlayCanvas.clientWidth || window.innerWidth,
+          viewportH: ui.overlayCanvas.clientHeight || window.innerHeight,
+          captureW: 256,
+          textureW: 384,
         })
-        .catch(() => {
-          // best-effort
-        })
-    }
+          .then((res) => {
+            planeMapper.updateFromDepth(res, sceneBundle.camera, pose, scaleMeters)
+            const ms = performance.now() - depthStart
+            console.info(`[depth] ${ms.toFixed(0)}ms ${res.width}x${res.height}`)
+          })
+          .catch(() => {
+            // best-effort
+          })
+      }
 
-    const dominant = runDepth ? planeMapper.getSurfaces()[0] : undefined
-    const depthPlaneAvailable = Boolean(dominant && dominant.confidence >= 0.45)
-    const slamAvailable = Boolean(slamPlane)
-    const switchCooldown = 800
-    if (!currentPlaneSource) {
-      if (slamAvailable) currentPlaneSource = 'slam'
-      else if (depthPlaneAvailable) currentPlaneSource = 'depth'
-    } else if (currentPlaneSource === 'slam' && !slamAvailable) {
-      if (depthPlaneAvailable && t - lastPlaneSwitchT > switchCooldown) {
-        currentPlaneSource = 'depth'
-        lastPlaneSwitchT = t
+      const dominant = runDepth ? planeMapper.getSurfaces()[0] : undefined
+      const depthPlaneAvailable = Boolean(dominant && dominant.confidence >= 0.45)
+      const slamAvailable = Boolean(slamPlane)
+      const switchCooldown = 800
+      if (!currentPlaneSource) {
+        if (slamAvailable) currentPlaneSource = 'slam'
+        else if (depthPlaneAvailable) currentPlaneSource = 'depth'
+      } else if (currentPlaneSource === 'slam' && !slamAvailable) {
+        if (depthPlaneAvailable && t - lastPlaneSwitchT > switchCooldown) {
+          currentPlaneSource = 'depth'
+          lastPlaneSwitchT = t
+        }
+      } else if (currentPlaneSource === 'depth' && !depthPlaneAvailable) {
+        if (slamAvailable && t - lastPlaneSwitchT > switchCooldown) {
+          currentPlaneSource = 'slam'
+          lastPlaneSwitchT = t
+        }
       }
-    } else if (currentPlaneSource === 'depth' && !depthPlaneAvailable) {
-      if (slamAvailable && t - lastPlaneSwitchT > switchCooldown) {
-        currentPlaneSource = 'slam'
-        lastPlaneSwitchT = t
-      }
-    }
 
-    if (currentPlaneSource === 'slam' && slamPlane) {
-      if (!slamPlaneMesh) {
-        const geom = new THREE.PlaneGeometry(1, 1)
-        const mat = new THREE.MeshBasicMaterial({ color: 0x4c8bff, opacity: 0.25, transparent: true, side: THREE.DoubleSide })
-        slamPlaneMesh = new THREE.Mesh(geom, mat)
-        sceneBundle.scene.add(slamPlaneMesh)
-      }
-      const pos = slamPlane.position.clone().multiplyScalar(scaleMeters)
-      slamPlaneMesh.position.copy(pos)
-      slamPlaneMesh.quaternion.copy(slamPlane.quaternion)
-      slamPlaneMesh.scale.set(1.2, 1.2, 1)
-      if (depthPlaneMesh) depthPlaneMesh.visible = false
+      if (currentPlaneSource === 'slam' && slamPlane) {
+        if (!slamPlaneMesh) {
+          const geom = new THREE.PlaneGeometry(1, 1)
+          const mat = new THREE.MeshBasicMaterial({
+            color: 0x4c8bff,
+            opacity: 0.25,
+            transparent: true,
+            side: THREE.DoubleSide,
+          })
+          slamPlaneMesh = new THREE.Mesh(geom, mat)
+          sceneBundle.scene.add(slamPlaneMesh)
+        }
+        const pos = slamPlane.position.clone().multiplyScalar(scaleMeters)
+        slamPlaneMesh.position.copy(pos)
+        slamPlaneMesh.quaternion.copy(slamPlane.quaternion)
+        slamPlaneMesh.scale.set(1.2, 1.2, 1)
+        if (depthPlaneMesh) depthPlaneMesh.visible = false
 
-      const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(slamPlane.quaternion).normalize()
-      const constant = -normal.dot(pos)
-      if (!worldPlaneBody) {
-        worldPlaneBody = physics.addPlane(normal, constant)
-      } else {
-        worldPlaneBody.position.set(-normal.x * constant, -normal.y * constant, -normal.z * constant)
-        worldPlaneBody.quaternion.setFromVectors(new CANNON.Vec3(0, 0, 1), new CANNON.Vec3(normal.x, normal.y, normal.z))
-      }
-    } else if (currentPlaneSource === 'depth' && dominant) {
-      if (!depthPlaneMesh) {
-        const geom = new THREE.PlaneGeometry(1, 1)
-        const mat = new THREE.MeshBasicMaterial({ color: 0x4cffb5, opacity: 0.2, transparent: true, side: THREE.DoubleSide })
-        depthPlaneMesh = new THREE.Mesh(geom, mat)
-        sceneBundle.scene.add(depthPlaneMesh)
-      }
-      depthPlaneMesh.visible = true
-      const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dominant.normal)
-      depthPlaneMesh.position.copy(dominant.center)
-      depthPlaneMesh.quaternion.copy(quat)
-      depthPlaneMesh.scale.set(dominant.extent * 2, dominant.extent * 2, 1)
-      if (slamPlaneMesh) slamPlaneMesh.visible = false
-      if (!worldPlaneBody) {
-        worldPlaneBody = physics.addPlane(dominant.normal, dominant.constant)
-      } else {
-        const n = dominant.normal
-        worldPlaneBody.position.set(-n.x * dominant.constant, -n.y * dominant.constant, -n.z * dominant.constant)
-        worldPlaneBody.quaternion.setFromVectors(new CANNON.Vec3(0, 0, 1), new CANNON.Vec3(n.x, n.y, n.z))
+        const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(slamPlane.quaternion).normalize()
+        const constant = -normal.dot(pos)
+        if (!worldPlaneBody) {
+          worldPlaneBody = physics.addPlane(normal, constant)
+        } else {
+          worldPlaneBody.position.set(-normal.x * constant, -normal.y * constant, -normal.z * constant)
+          worldPlaneBody.quaternion.setFromVectors(
+            new CANNON.Vec3(0, 0, 1),
+            new CANNON.Vec3(normal.x, normal.y, normal.z),
+          )
+        }
+      } else if (currentPlaneSource === 'depth' && dominant) {
+        if (!depthPlaneMesh) {
+          const geom = new THREE.PlaneGeometry(1, 1)
+          const mat = new THREE.MeshBasicMaterial({
+            color: 0x4cffb5,
+            opacity: 0.2,
+            transparent: true,
+            side: THREE.DoubleSide,
+          })
+          depthPlaneMesh = new THREE.Mesh(geom, mat)
+          sceneBundle.scene.add(depthPlaneMesh)
+        }
+        depthPlaneMesh.visible = true
+        const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dominant.normal)
+        depthPlaneMesh.position.copy(dominant.center)
+        depthPlaneMesh.quaternion.copy(quat)
+        depthPlaneMesh.scale.set(dominant.extent * 2, dominant.extent * 2, 1)
+        if (slamPlaneMesh) slamPlaneMesh.visible = false
+        if (!worldPlaneBody) {
+          worldPlaneBody = physics.addPlane(dominant.normal, dominant.constant)
+        } else {
+          const n = dominant.normal
+          worldPlaneBody.position.set(-n.x * dominant.constant, -n.y * dominant.constant, -n.z * dominant.constant)
+          worldPlaneBody.quaternion.setFromVectors(
+            new CANNON.Vec3(0, 0, 1),
+            new CANNON.Vec3(n.x, n.y, n.z),
+          )
+        }
       }
     }
 
@@ -392,6 +436,11 @@ export async function startApp() {
     }
 
     physics.step(dt)
+
+    if (mode === 'angry') {
+      angry.update(dt, sceneBundle.camera.position)
+      ui.scoreHud.textContent = `Score: ${angry.getScore()}`
+    }
 
     if (showSlamPoints) {
       overlay2d.clearRect(0, 0, ui.overlayCanvas.width, ui.overlayCanvas.height)

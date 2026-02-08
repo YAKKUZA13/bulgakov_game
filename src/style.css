@@ -108,6 +108,66 @@ body {
   word-break: break-word;
 }
 
+.scoreHud {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 22;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(10, 14, 28, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  pointer-events: none;
+  display: none;
+}
+
+.powerHud {
+  position: absolute;
+  right: 16px;
+  bottom: 110px;
+  z-index: 21;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(10, 14, 28, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  pointer-events: none;
+}
+
+.powerTrack {
+  width: 120px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.powerFill {
+  height: 100%;
+  background: rgba(255, 90, 90, 0.85);
+  width: 0%;
+  transition: width 40ms linear;
+}
+
+.powerLabel {
+  font-size: 12px;
+  opacity: 0.85;
+  letter-spacing: 0.2px;
+}
+
+.powerValue {
+  font-size: 12px;
+  font-weight: 700;
+  min-width: 28px;
+  text-align: right;
+}
+
 .gameControls {
   position: absolute;
   left: 12px;

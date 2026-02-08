@@ -1,11 +1,26 @@
 import * as THREE from 'three'
 import type { PhysicsWorld } from '../../physics/world'
-import { createTowerModelConicalBlueTower, createTowerModelGreenPillar, createTowerModelRedTower, createTowerModelYellowWideTower } from './towerModels'
+
+export type DogTarget = {
+  mesh: THREE.Mesh
+  velocity: THREE.Vector3
+  radius: number
+  spawnedAt: number
+}
+
+export type Projectile = {
+  body: import('cannon-es').Body
+  radius: number
+  spawnedAt: number
+}
 
 export type AngryState = {
-  structures: import('cannon-es').Body[]
-  projectiles: import('cannon-es').Body[]
-  trajectoryLine: THREE.Line | null
+  dogs: DogTarget[]
+  projectiles: Projectile[]
+  trajectoryLine: THREE.Object3D | null
+  trajectoryMarker: THREE.Mesh | null
+  score: number
+  lastSpawnT: number
 }
 
 export type TrajectoryPoint = {
@@ -13,102 +28,112 @@ export type TrajectoryPoint = {
   time: number
 }
 
-export function createAngryMode(params: {
-  scene: THREE.Scene
-  physics: PhysicsWorld
-}) {
-  const { scene, physics } = params
-  const state: AngryState = { structures: [], projectiles: [], trajectoryLine: null }
+const MAX_DOGS = 8
+const SPAWN_INTERVAL_MS = 900
+const MIN_SPAWN_DIST = 3.0
+const MAX_SPAWN_DIST = 7.0
+const DOG_SPEED = 0.7
+const DOG_RADIUS = 0.25
+const DOG_MIN_Y_OFFSET = -0.6
+const DOG_MAX_Y_OFFSET = 0.9
+const PROJECTILE_RADIUS = 0.12
+const PROJECTILE_TTL_MS = 4500
 
-  function clearBodies(bodies: import('cannon-es').Body[]) {
-    for (const b of bodies) physics.removeBody(b)
-    bodies.length = 0
+export function createAngryMode(params: { scene: THREE.Scene; physics: PhysicsWorld }) {
+  const { scene, physics } = params
+  const state: AngryState = {
+    dogs: [],
+    projectiles: [],
+    trajectoryLine: null,
+    trajectoryMarker: null,
+    score: 0,
+    lastSpawnT: 0,
   }
 
-  function reset(structureCenter = new THREE.Vector3(0, 0.5, -1)) {
-    clearBodies(state.structures)
-    clearBodies(state.projectiles)
+  function clearProjectiles() {
+    for (const p of state.projectiles) physics.removeBody(p.body)
+    state.projectiles.length = 0
+  }
 
-    const basePos = structureCenter.clone()
-    const size = new THREE.Vector3(0.25, 0.25, 0.25)
-    const mat = new THREE.MeshStandardMaterial({ color: 0xffa24f })
+  function clearDogs() {
+    for (const d of state.dogs) d.mesh.removeFromParent()
+    state.dogs.length = 0
+  }
 
-    // Классические блоки
-    // for (let i = 0; i < 6; i++) {
-    //   const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), mat)
-    //   mesh.position.set(basePos.x + (i % 3) * 0.3, basePos.y + Math.floor(i / 3) * 0.3, basePos.z)
-    //   scene.add(mesh)
-    //   const body = physics.addBox(mesh, size, 0.7)
-    //   state.structures.push(body)
-    // }
+  function reset() {
+    hideTrajectory()
+    clearDogs()
+    clearProjectiles()
+    state.score = 0
+    state.lastSpawnT = performance.now()
+  }
 
-    // Красные башни
-    // for (let i = 0; i < 3; i++) {
-    //   const towerPos = new THREE.Vector3(
-    //     basePos.x + (i - 1) * 0.6,
-    //     basePos.y + 0.15,
-    //     basePos.z - 1.0,
-    //   )
+  function spawnDog(playerPos: THREE.Vector3) {
+    if (state.dogs.length >= MAX_DOGS) return
+    const angle = Math.random() * Math.PI * 2
+    const dist = THREE.MathUtils.lerp(MIN_SPAWN_DIST, MAX_SPAWN_DIST, Math.random())
+    const yOffset = THREE.MathUtils.lerp(DOG_MIN_Y_OFFSET, DOG_MAX_Y_OFFSET, Math.random())
+    const pos = new THREE.Vector3(
+      playerPos.x + Math.cos(angle) * dist,
+      Math.max(0.2, playerPos.y + yOffset),
+      playerPos.z + Math.sin(angle) * dist,
+    )
+    const geom = new THREE.SphereGeometry(DOG_RADIUS, 14, 14)
+    const mat = new THREE.MeshStandardMaterial({ color: 0x8b5e3c })
+    const mesh = new THREE.Mesh(geom, mat)
+    mesh.position.copy(pos)
+    scene.add(mesh)
+    state.dogs.push({ mesh, velocity: new THREE.Vector3(), radius: DOG_RADIUS, spawnedAt: performance.now() })
+  }
 
-    //   const model = createTowerModelRedTower({
-    //     scene,
-    //     physics,
-    //     position: towerPos,
-    //   })
-
-    //   state.structures.push(model.body)
-    // }
-
-    // Синие конусные башни
-    // for (let i = 0; i < 3; i++) {
-    //   const towerPos = new THREE.Vector3(
-    //     basePos.x + (i - 1) * 0.6,
-    //     basePos.y + 0.15,
-    //     basePos.z - 1.0,
-    //   )
-
-    //   const model = createTowerModelConicalBlueTower({
-    //     scene,
-    //     physics,
-    //     position: towerPos,
-    //   })
-
-    //   state.structures.push(model.body)
-    // }
-
-    // Зелёные колонны
-    // for (let i = 0; i < 3; i++) {
-    //   const towerPos = new THREE.Vector3(
-    //     basePos.x + (i - 1) * 0.6,
-    //     basePos.y + 0.15,
-    //     basePos.z - 1.0,
-    //   )
-
-    //   const model = createTowerModelGreenPillar({
-    //     scene,
-    //     physics,
-    //     position: towerPos,
-    //   })
-
-    //   state.structures.push(model.body)
-    // }
-
-    // Жёлтые пирамиды
-    for (let i = 0; i < 3; i++) {
-      const towerPos = new THREE.Vector3(
-        basePos.x + (i - 1) * 0.6,
-        basePos.y + 0.15,
-        basePos.z - 1.0,
-      )
-
-      const model = createTowerModelYellowWideTower({
-        scene,
-        physics,
-        position: towerPos,
-      })
-
-      state.structures.push(model.body)
+  function updateDogs(dt: number, playerPos: THREE.Vector3) {
+    for (const d of state.dogs) {
+      const dir = playerPos.clone().sub(d.mesh.position).normalize()
+      d.velocity.copy(dir).multiplyScalar(DOG_SPEED)
+      d.mesh.position.addScaledVector(d.velocity, dt)
     }
+  }
+
+  function checkHits(playerPos: THREE.Vector3) {
+    const now = performance.now()
+    for (let i = state.projectiles.length - 1; i >= 0; i -= 1) {
+      const proj = state.projectiles[i]
+      if (now - proj.spawnedAt > PROJECTILE_TTL_MS) {
+        physics.removeBody(proj.body)
+        state.projectiles.splice(i, 1)
+        continue
+      }
+      const p = proj.body.position
+      for (let j = state.dogs.length - 1; j >= 0; j -= 1) {
+        const dog = state.dogs[j]
+        const dist = dog.mesh.position.distanceTo(new THREE.Vector3(p.x, p.y, p.z))
+        if (dist <= dog.radius + proj.radius) {
+          dog.mesh.removeFromParent()
+          state.dogs.splice(j, 1)
+          physics.removeBody(proj.body)
+          state.projectiles.splice(i, 1)
+          state.score += 1
+          break
+        }
+      }
+    }
+    for (let k = state.dogs.length - 1; k >= 0; k -= 1) {
+      const dog = state.dogs[k]
+      if (dog.mesh.position.distanceTo(playerPos) < 0.6) {
+        dog.mesh.removeFromParent()
+        state.dogs.splice(k, 1)
+      }
+    }
+  }
+
+  function update(dt: number, playerPos: THREE.Vector3) {
+    const now = performance.now()
+    if (now - state.lastSpawnT >= SPAWN_INTERVAL_MS) {
+      state.lastSpawnT = now
+      spawnDog(playerPos)
+    }
+    updateDogs(dt, playerPos)
+    checkHits(playerPos)
   }
 
   /**
@@ -163,28 +188,22 @@ export function createAngryMode(params: {
     const points = calculateTrajectory(from, dir, power)
     if (points.length < 2) return
 
-    // Создаём геометрию линии
-    const positions = new Float32Array(points.length * 3)
-    for (let i = 0; i < points.length; i++) {
-      positions[i * 3] = points[i].position.x
-      positions[i * 3 + 1] = points[i].position.y
-      positions[i * 3 + 2] = points[i].position.z
+    const curve = new THREE.CatmullRomCurve3(points.map((p) => p.position))
+    const geometry = new THREE.TubeGeometry(curve, Math.max(16, points.length * 2), 0.015, 8, false)
+    const material = new THREE.MeshBasicMaterial({ color: 0xff4b4b, opacity: 0.85, transparent: true })
+    const tube = new THREE.Mesh(geometry, material)
+    scene.add(tube)
+    state.trajectoryLine = tube
+
+    const end = points[points.length - 1]?.position
+    if (end) {
+      const markerGeom = new THREE.SphereGeometry(0.035, 10, 10)
+      const markerMat = new THREE.MeshBasicMaterial({ color: 0xffc1c1 })
+      const marker = new THREE.Mesh(markerGeom, markerMat)
+      marker.position.copy(end)
+      scene.add(marker)
+      state.trajectoryMarker = marker
     }
-
-    const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-
-    // Материал для линии траектории (красный, полупрозрачный)
-    const material = new THREE.LineBasicMaterial({
-      color: 0xff4b4b,
-      opacity: 0.7,
-      transparent: true,
-      linewidth: 2,
-    })
-
-    const line = new THREE.Line(geometry, material)
-    scene.add(line)
-    state.trajectoryLine = line
   }
 
   /**
@@ -193,9 +212,20 @@ export function createAngryMode(params: {
   function hideTrajectory() {
     if (state.trajectoryLine) {
       scene.remove(state.trajectoryLine)
-      state.trajectoryLine.geometry.dispose()
-        ; (state.trajectoryLine.material as THREE.Material).dispose()
+      const mesh = state.trajectoryLine as THREE.Mesh
+      mesh.geometry?.dispose?.()
+      const mat = mesh.material
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose())
+      else mat.dispose()
       state.trajectoryLine = null
+    }
+    if (state.trajectoryMarker) {
+      scene.remove(state.trajectoryMarker)
+      state.trajectoryMarker.geometry.dispose()
+      const mat = state.trajectoryMarker.material
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose())
+      else mat.dispose()
+      state.trajectoryMarker = null
     }
   }
 
@@ -203,7 +233,7 @@ export function createAngryMode(params: {
     // Скрываем траекторию при запуске
     hideTrajectory()
 
-    const radius = 0.12
+    const radius = PROJECTILE_RADIUS
     const mesh = new THREE.Mesh(
       new THREE.SphereGeometry(radius, 18, 18),
       new THREE.MeshStandardMaterial({ color: 0xff4b4b }),
@@ -213,19 +243,21 @@ export function createAngryMode(params: {
     const body = physics.addSphere(mesh, radius, 0.9)
     const impulse = dir.clone().normalize().multiplyScalar(power)
     body.velocity.set(impulse.x, impulse.y, impulse.z)
-    state.projectiles.push(body)
+    state.projectiles.push({ body, radius, spawnedAt: performance.now() })
   }
 
   return {
     state,
     reset,
+    update,
     launch,
     showTrajectory,
     hideTrajectory,
+    getScore: () => state.score,
     clear: () => {
       hideTrajectory()
-      clearBodies(state.structures)
-      clearBodies(state.projectiles)
+      clearDogs()
+      clearProjectiles()
     },
   }
 }
