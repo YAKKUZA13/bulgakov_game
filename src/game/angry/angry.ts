@@ -54,7 +54,7 @@ const DOG_HIT_RADIUS_SCALE = 1.55
 const DOG_MIN_Y_OFFSET = -0.6
 const DOG_MAX_Y_OFFSET = 0.9
 const DOG_SCALE = 0.9
-const DOG_MODEL_URLS = ['/models3D/dogdog.glb', '/models3D/dogdog2.glb', '/models3D/dogdog3.glb', '/models3D/dogdog4.glb']
+const DOG_MODEL_URLS = ['models3D/dogdog.glb', 'models3D/dogdog2.glb', 'models3D/dogdog3.glb', 'models3D/dogdog4.glb']
 const DOG_IDLE_ANIMATION_INDICES = [0, 1, 3]
 const DOG_HIT_ANIMATION_INDEX = 2
 const DOG_FACING_Y_OFFSET = -(Math.PI / 2)
@@ -70,7 +70,7 @@ const DOG_BRIGHTNESS_BOOST = 1.06
 const DOG_DESPAWN_DISTANCE_TO_CAMERA = 1.7
 const PROJECTILE_RADIUS = 0.12
 const PROJECTILE_TTL_MS = 4500
-const PROJECTILE_MODEL_URL = '/models3D/starr.glb'
+const PROJECTILE_MODEL_URL = 'models3D/starr.glb'
 
 export function createAngryMode(params: { scene: THREE.Scene; physics: PhysicsWorld }) {
   const { scene, physics } = params
