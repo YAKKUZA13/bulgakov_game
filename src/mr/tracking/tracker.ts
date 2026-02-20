@@ -114,16 +114,18 @@ export function createTrackingController(params: ControllerParams): TrackingCont
 
   async function loadAlvaModule(): Promise<AlvaModule | null> {
     try {
+      const appBase = new URL(import.meta.env.BASE_URL, window.location.origin).toString()
+      const vendorBase = new URL('vendor/', appBase).toString()
       if (typeof window !== 'undefined') {
         const anyGlobal = globalThis as any
         if (!anyGlobal.Module) {
           anyGlobal.Module = {
-            locateFile: (path: string) => new URL(path, `${window.location.origin}/vendor/`).toString(),
+            locateFile: (path: string) => new URL(path, vendorBase).toString(),
           }
         }
       }
-      // Load from current origin to avoid localhost URL issues.
-      const modUrl = new URL('/vendor/alva_ar.js', window.location.href).toString()
+      // Resolve through Vite BASE_URL so this also works on GitHub Pages subpath.
+      const modUrl = new URL('vendor/alva_ar.js', appBase).toString()
       const mod = (await import(/* @vite-ignore */ modUrl)) as AlvaModule
       if (typeof mod?.AlvaAR?.Initialize === 'function') {
         console.info('[alva] module loaded')

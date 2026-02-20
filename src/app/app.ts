@@ -125,7 +125,7 @@ export async function startApp() {
     onStatus: (st, detail) => {
       if (st === 'tracking') baseStatus = `Tracking (${detail ?? 'ok'})`
       else if (st === 'lost') baseStatus = 'Tracking lost'
-      else if (st === 'unavailable') baseStatus = 'Tracking unavailable (place /vendor/alva_ar.js)'
+      else if (st === 'unavailable') baseStatus = 'Tracking unavailable (place public/vendor/alva_ar.js)'
       else if (st === 'initializing') baseStatus = 'Tracking initializing…'
       setStatus(baseStatus)
     },
