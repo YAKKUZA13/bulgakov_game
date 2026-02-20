@@ -114,7 +114,7 @@ export function createTrackingController(params: ControllerParams): TrackingCont
 
   async function loadAlvaModule(): Promise<AlvaModule | null> {
     try {
-      const appBase = new URL(import.meta.env.BASE_URL, window.location.origin).toString()
+      const appBase = new URL(import.meta.env.BASE_URL, window.location.href).toString()
       const vendorBase = new URL('vendor/', appBase).toString()
       if (typeof window !== 'undefined') {
         const anyGlobal = globalThis as any
