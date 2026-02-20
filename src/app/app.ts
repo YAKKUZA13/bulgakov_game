@@ -38,11 +38,19 @@ export async function startApp() {
   const maxPower = 6
   const aimScaleX = 2.2
   const aimScaleY = 2.8
+  let gyroQuat = new THREE.Quaternion()
+  let gyroActive = false
   const overlay2dMaybe = ui.overlayCanvas.getContext('2d')
   if (!overlay2dMaybe) throw new Error('2D overlay context missing')
   const overlay2d = overlay2dMaybe
 
   const sceneBundle = createScene(ui.renderCanvas)
+  const cameraSunLight = new THREE.DirectionalLight(0xfff2d6, 1.9)
+  cameraSunLight.castShadow = false
+  const cameraFillLight = new THREE.HemisphereLight(0xffffff, 0x5f6f88, 0.55)
+  sceneBundle.scene.add(cameraSunLight)
+  sceneBundle.scene.add(cameraSunLight.target)
+  sceneBundle.scene.add(cameraFillLight)
 
   ui.btnToggleUi.addEventListener('click', () => {
     const hidden = ui.root.classList.toggle('uiHidden')
@@ -84,6 +92,18 @@ export async function startApp() {
   ui.btnJumpGame.addEventListener('pointerup', () => (jumpPressed = false))
   ui.btnJumpGame.addEventListener('pointercancel', () => (jumpPressed = false))
   ui.btnJumpGame.addEventListener('pointerleave', () => (jumpPressed = false))
+
+  function onDeviceOrientation(ev: DeviceOrientationEvent) {
+    const alpha = THREE.MathUtils.degToRad(ev.alpha ?? 0)
+    const beta = THREE.MathUtils.degToRad(ev.beta ?? 0)
+    const gamma = THREE.MathUtils.degToRad(ev.gamma ?? 0)
+    const euler = new THREE.Euler(beta, alpha, -gamma, 'YXZ')
+    gyroQuat = new THREE.Quaternion().setFromEuler(euler)
+    gyroActive = true
+  }
+  if (typeof window !== 'undefined' && 'DeviceOrientationEvent' in window) {
+    window.addEventListener('deviceorientation', onDeviceOrientation)
+  }
 
   function resizeOverlay() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
@@ -152,6 +172,7 @@ export async function startApp() {
     if (next === 'treasure') treasure.reset(new THREE.Vector3(0, 0.6, -1))
     ui.scoreHud.style.display = next === 'angry' ? 'block' : 'none'
     ui.powerHud.style.display = 'none'
+    ui.overlayCanvas.style.touchAction = next === 'angry' ? 'none' : 'manipulation'
     launchStart = null
   }
 
@@ -223,15 +244,58 @@ export async function startApp() {
     angry.showTrajectory(from, dir, power)
   }
 
+  function shootAtPointer(clientX: number, clientY: number) {
+    const dogs = angry.getDogRoots()
+    if (!dogs.length) return
+    const rect = ui.overlayCanvas.getBoundingClientRect()
+    const w = rect.width || window.innerWidth
+    const h = rect.height || window.innerHeight
+    const x = ((clientX - rect.left) / w) * 2 - 1
+    const y = -((clientY - rect.top) / h) * 2 + 1
+    sceneBundle.raycaster.setFromCamera(new THREE.Vector2(x, y), sceneBundle.camera)
+    const hits = sceneBundle.raycaster.intersectObjects(dogs, true)
+    const from = new THREE.Vector3().copy(sceneBundle.camera.position).add(new THREE.Vector3(0, 0, 0))
+    let target: THREE.Vector3 | null = null
+    let distance = 0
+    if (hits.length > 0) {
+      const hit = hits[0]
+      target = hit.point.clone()
+      distance = hit.distance
+    } else {
+      // Fallback for animated/skinned GLB meshes where raycast can be unreliable on some devices.
+      const origin = sceneBundle.raycaster.ray.origin
+      const aimTargets = angry.getDogAimTargets()
+      for (const aimTarget of aimTargets) {
+        const sphereHit = sceneBundle.raycaster.ray.intersectSphere(
+          new THREE.Sphere(aimTarget.center, aimTarget.radius),
+          new THREE.Vector3(),
+        )
+        if (!sphereHit) continue
+        const hitDistance = sphereHit.distanceTo(origin)
+        if (distance === 0 || hitDistance < distance) {
+          distance = hitDistance
+          target = sphereHit
+        }
+      }
+    }
+    if (!target || distance <= 0) return
+    const power = THREE.MathUtils.clamp(distance * 2.2, 7.5, 14)
+    const travelT = distance / power
+    target.y += 0.5 * 9.81 * travelT * travelT
+    const dir = target.sub(from).normalize()
+    angry.launch(from, dir, power)
+  }
+
   ui.overlayCanvas.addEventListener('pointerdown', (ev) => {
     if (mode === 'runner') {
       placeRunnerAtPointer(ev)
       return
     }
-    if (mode !== 'angry') return
-    launchStart = { x: ev.clientX, y: ev.clientY }
-    updateTrajectory(ev.clientX, ev.clientY)
-    ui.powerHud.style.display = 'flex'
+    if (mode === 'angry') {
+      shootAtPointer(ev.clientX, ev.clientY)
+      return
+    }
+    return
   })
 
   ui.overlayCanvas.addEventListener('pointermove', (ev) => {
@@ -295,6 +359,13 @@ export async function startApp() {
     }
   })
 
+  function suppressSwipeRefresh(ev: TouchEvent) {
+    if (mode !== 'angry') return
+    ev.preventDefault()
+  }
+  ui.overlayCanvas.addEventListener('touchstart', suppressSwipeRefresh, { passive: false })
+  ui.overlayCanvas.addEventListener('touchmove', suppressSwipeRefresh, { passive: false })
+
   function updatePowerHud(power: number) {
     const fill = ui.powerHud.querySelector<HTMLDivElement>('.powerFill')
     if (!fill) return
@@ -311,6 +382,7 @@ export async function startApp() {
   let perfDtSum = 0
   let perfSlow = 0
   let lastStatsUi = lastT
+  const cameraForward = new THREE.Vector3()
   function frame(t: number) {
     const dt = Math.min((t - lastT) / 1000, 0.05)
     lastT = t
@@ -321,8 +393,15 @@ export async function startApp() {
     tracking.update(dt)
     const pose = tracking.getPose()
     if (mode === 'angry') {
-      sceneBundle.camera.position.copy(pose.position)
-      sceneBundle.camera.quaternion.copy(pose.quaternion)
+      // In Angry mode we keep a fixed horizontal world floor and use SLAM only for phone position.
+      sceneBundle.camera.position.set(pose.position.x, 1.6, pose.position.z)
+      sceneBundle.camera.quaternion.copy(gyroActive ? gyroQuat : pose.quaternion)
+      if (slamPlaneMesh) slamPlaneMesh.visible = false
+      if (depthPlaneMesh) depthPlaneMesh.visible = false
+      if (worldPlaneBody) {
+        worldPlaneBody.position.set(0, 0, 0)
+        worldPlaneBody.quaternion.setFromVectors(new CANNON.Vec3(0, 0, 1), new CANNON.Vec3(0, 1, 0))
+      }
     } else {
       sceneBundle.camera.position.copy(pose.position)
       sceneBundle.camera.quaternion.copy(pose.quaternion)
@@ -426,6 +505,18 @@ export async function startApp() {
         }
       }
     }
+    sceneBundle.camera.getWorldDirection(cameraForward)
+    cameraSunLight.position.set(
+      sceneBundle.camera.position.x - cameraForward.x * 1.2,
+      sceneBundle.camera.position.y + 6.5,
+      sceneBundle.camera.position.z - cameraForward.z * 1.2,
+    )
+    cameraSunLight.target.position.set(
+      sceneBundle.camera.position.x + cameraForward.x * 3.0,
+      sceneBundle.camera.position.y - 1.0,
+      sceneBundle.camera.position.z + cameraForward.z * 3.0,
+    )
+    cameraSunLight.target.updateMatrixWorld()
 
     if (mode === 'runner') {
       runner.setInput({ moveX: joy.state.moveX, jumpPressed })
