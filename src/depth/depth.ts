@@ -341,7 +341,7 @@ export async function estimateDepthFromImageURL(imageUrl: string, opts?: DepthCa
 
   const captureW = Math.max(518, Math.floor(opts?.captureW ?? 768))
   const captureH = Math.max(2, Math.round(captureW / Math.max(1e-6, aspect)))
-  const modelCanvas = drawImageToCanvasCover(img, iw, ih, captureW, captureH)
+  drawImageToCanvasCover(img, iw, ih, captureW, captureH)
 
   // Feed the original URL to transformers (blob: is fine). This avoids re-encoding quality loss.
   const image = await RawImage.fromURL(imageUrl)
